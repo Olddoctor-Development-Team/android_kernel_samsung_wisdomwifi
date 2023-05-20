@@ -87,6 +87,7 @@ struct usb_notify {
 	int disable_v_drive;
 	unsigned long c_type;
 	int c_status;
+	int reserve_vbus_booster;
 #if defined(CONFIG_USB_HW_PARAM)
 	unsigned long long hw_param[USB_CCIC_HW_PARAM_MAX];
 #endif
@@ -124,6 +125,7 @@ static int check_event_type(enum otg_notify_events event)
 	case NOTIFY_EVENT_GAMEPAD_CONNECT:
 	case NOTIFY_EVENT_LANHUB_CONNECT:
 	case NOTIFY_EVENT_POWER_SOURCE:
+	case NOTIFY_EVENT_RESERVE_BOOSTER:
 	case NOTIFY_EVENT_PD_CONTRACT:
 		ret |= NOTIFY_EVENT_EXTRA;
 		break;
@@ -237,6 +239,8 @@ const char *event_string(enum otg_notify_events event)
 		return "lanhub_connect";
 	case NOTIFY_EVENT_POWER_SOURCE:
 		return "power_role_source";
+	case NOTIFY_EVENT_RESERVE_BOOSTER:
+		return "reserve_booster";
 	case NOTIFY_EVENT_PD_CONTRACT:
 		return "pd_contract";
 	default:
@@ -636,6 +640,50 @@ static void update_cable_status(struct otg_notify *n, unsigned long event,
 	}
 }
 
+void send_usb_err_uevent(int err_type, int mode)
+{
+	struct otg_notify *o_notify = get_otg_notify();
+	char *envp[4];
+	char *type = {"TYPE=usberr"};
+	char *state;
+	char *words;
+	int index = 0;
+
+	if (!o_notify) {
+		pr_err("%s o_notify is null\n", __func__);
+		goto err;
+	}
+
+	if (mode)
+		state = "STATE=ADD";
+	else
+		state = "STATE=REMOVE";
+
+	envp[index++] = type;
+	envp[index++] = state;
+
+	switch (err_type) {
+	case USB_ERR_ABNORMAL_RESET:
+		words = "WORDS=abnormal_reset";
+		break;
+	default:
+		pr_err("%s invalid input\n", __func__);
+		goto err;
+	}
+
+	envp[index++] = words;
+	envp[index++] = NULL;
+
+	if (send_usb_notify_uevent(o_notify, envp)) {
+		pr_err("%s error\n", __func__);
+		goto err;
+	}
+	pr_info("%s: %s\n", __func__, words);
+err:
+	return;
+}
+EXPORT_SYMBOL(send_usb_err_uevent);
+
 static void otg_notify_state(struct otg_notify *n,
 			unsigned long event, int enable)
 {
@@ -771,6 +819,16 @@ static void otg_notify_state(struct otg_notify *n,
 					n->vbus_drive(1);
 				u_notify->typec_status.power_role
 							= HNOTIFY_SOURCE;
+			}
+			if (n->auto_drive_vbus == NOTIFY_OP_OFF) {
+				if ((u_notify->typec_status.power_role == HNOTIFY_SOURCE)
+					&& u_notify->reserve_vbus_booster
+					&& !is_blocked(n, NOTIFY_BLOCK_TYPE_HOST)) {
+					pr_info("reserved vbus turn on\n");
+					if (n->vbus_drive)
+						n->vbus_drive(1);
+					u_notify->reserve_vbus_booster = 0;
+				}
 			}
 		} else { /* disable */
 			u_notify->ndev.mode = NOTIFY_NONE_MODE;
@@ -1035,6 +1093,12 @@ static void extra_notify_state(struct otg_notify *n,
 			u_notify->typec_status.power_role = HNOTIFY_SINK;
 		send_external_notify(EXTERNAL_NOTIFY_POWERROLE,
 				u_notify->typec_status.power_role);
+		break;
+	case NOTIFY_EVENT_RESERVE_BOOSTER:
+		if (enable)
+			u_notify->reserve_vbus_booster = 1;
+		else
+			u_notify->reserve_vbus_booster = 0;
 		break;
 	case NOTIFY_EVENT_PD_CONTRACT:
 		if (enable)
@@ -1954,6 +2018,23 @@ end2:
 	return true;
 }
 EXPORT_SYMBOL(is_blocked);
+
+int send_usb_notify_uevent(struct otg_notify *n, char *envp_ext[])
+{
+	struct usb_notify *u_notify = (struct usb_notify *)(n->u_notify);
+	int ret = 0;
+
+	if (!u_notify) {
+		pr_err("%s u_notify is null\n", __func__);
+		ret = -EFAULT;
+		goto err;
+	}
+
+	ret = usb_notify_dev_uevent(&u_notify->udev, envp_ext);
+err:
+	return ret;
+}
+EXPORT_SYMBOL(send_usb_notify_uevent);
 
 #if defined(CONFIG_USB_HW_PARAM)
 unsigned long long *get_hw_param(struct otg_notify *n,

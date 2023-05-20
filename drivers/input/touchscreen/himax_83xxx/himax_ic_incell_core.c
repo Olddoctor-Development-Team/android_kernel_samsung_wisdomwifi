@@ -9,6 +9,7 @@ extern int g_i_FW_VER;
 extern int g_i_CFG_VER;
 extern int g_i_CID_MAJ;
 extern int g_i_CID_MIN;
+extern int g_i_PANEL;
 extern unsigned char *i_CTPM_FW;
 #endif
 #ifdef HX_ZERO_FLASH
@@ -21,6 +22,7 @@ extern unsigned long CFG_VER_MAJ_FLASH_ADDR;
 extern unsigned long CFG_VER_MIN_FLASH_ADDR;
 extern unsigned long CID_VER_MAJ_FLASH_ADDR;
 extern unsigned long CID_VER_MIN_FLASH_ADDR;
+extern unsigned long PANEL_VERSION_ADDR;
 
 extern unsigned long FW_VER_MAJ_FLASH_LENG;
 extern unsigned long FW_VER_MIN_FLASH_LENG;
@@ -505,6 +507,8 @@ static bool himax_mcu_sense_off(bool check_en)
 			msleep(10);
 #ifdef HX_RST_PIN_FUNC
 			g_core_fp.fp_ic_reset(false, false);
+#else
+			g_core_fp.fp_system_reset();
 #endif
 		}
 	} while (cnt++ < 15);
@@ -1462,8 +1466,14 @@ static bool himax_mcu_calculateChecksum(bool change_iref)
 	for (i = 0; i < DATA_LEN_4; i++) {
 		tmp_data[i] = psram_op->addr_rawdata_end[i];
 	}
-
-	CRC_result = g_core_fp.fp_check_CRC(tmp_data, FW_SIZE_64k);
+	
+	if (strcmp(private_ts->chip_name, HX_83102D_SERIES_PWON) == 0) {
+		I("Now size=%d\n", FW_SIZE_128k);
+		CRC_result = g_core_fp.fp_check_CRC(tmp_data, FW_SIZE_128k);
+	} else {
+		I("Now size=%d\n", FW_SIZE_64k);
+		CRC_result = g_core_fp.fp_check_CRC(tmp_data, FW_SIZE_64k);
+	}
 	msleep(50);
 
 	if (CRC_result != 0) {
@@ -2344,6 +2354,13 @@ static bool himax_mcu_flash_lastdata_check(void)
 	uint32_t flash_page_len = 0x80;
 	uint8_t flash_tmp_buffer[128];
 
+	if (strcmp(private_ts->chip_name, HX_83102D_SERIES_PWON) == 0)
+		start_addr = FW_SIZE_128k - flash_page_len;
+	else
+		start_addr = FW_SIZE_64k - flash_page_len;
+
+	I("Now start size=0x%08X\n", start_addr);
+	
 	for (temp_addr = start_addr; temp_addr < (start_addr + flash_page_len);
 		temp_addr = temp_addr + flash_page_len) {
 		/*input_info(true, &private_ts->client->dev, "temp_addr=%d,tmp_addr[0]=0x%2X, tmp_addr[1]=0x%2X,tmp_addr[2]=0x%2X,tmp_addr[3]=0x%2X\n", temp_addr,tmp_addr[0], tmp_addr[1], tmp_addr[2],tmp_addr[3]);*/
@@ -2553,6 +2570,7 @@ static int himax_mcu_fw_ver_bin(void)
 			i_CTPM_FW[CFG_VER_MIN_FLASH_ADDR];
 		g_i_CID_MAJ = i_CTPM_FW[CID_VER_MAJ_FLASH_ADDR];
 		g_i_CID_MIN = i_CTPM_FW[CID_VER_MIN_FLASH_ADDR];
+		g_i_PANEL = i_CTPM_FW[PANEL_VERSION_ADDR];
 	} else {
 		input_info(true, &private_ts->client->dev,
 				"%s %s:FW data is null!\n", HIMAX_LOG_TAG, __func__);
@@ -2839,6 +2857,8 @@ static void himax_mcu_esd_ic_reset(void)
 	HX_ESD_RESET_ACTIVATE = 0;
 #ifdef HX_RST_PIN_FUNC
 	himax_mcu_pin_reset();
+#else
+	g_core_fp.fp_system_reset();
 #endif
 	input_info(true, &private_ts->client->dev, "%s %s:\n", HIMAX_LOG_TAG,
 			__func__);

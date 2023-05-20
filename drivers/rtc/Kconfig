@@ -73,6 +73,14 @@ config RTC_DEBUG
 	  Say yes here to enable debugging support in the RTC framework
 	  and individual RTC drivers.
 
+config RTC_HIGH_RES
+	bool "RTC High Resolution Timer support"
+	default n
+	help
+	  Say yes here to enable high resolution timer(milliseconds) support
+	  in the RTC framework if your hardware is capable.
+	  Read time only. Not support set time, set alarm, read alarm.
+
 comment "RTC interfaces"
 
 config RTC_INTF_SYSFS
@@ -1670,5 +1678,13 @@ config RTC_DRV_HID_SENSOR_TIME
 	  If this driver is compiled as a module, it will be named
 	  rtc-hid-sensor-time.
 
+config RTC_DRV_GOLDFISH
+	tristate "Goldfish Real Time Clock"
+	depends on MIPS && (GOLDFISH || COMPILE_TEST)
+	help
+	  Say yes to enable RTC driver for the Goldfish based virtual platform.
+
+	  Goldfish is a code name for the virtual platform developed by Google
+	  for Android emulation.
 
 endif # RTC_CLASS

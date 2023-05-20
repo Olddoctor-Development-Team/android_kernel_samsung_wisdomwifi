@@ -23,6 +23,10 @@
 
 #include "debug.h"
 
+static bool hip4_system_wq;
+module_param(hip4_system_wq, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(hip4_system_wq, "Use system wq instead of named workqueue. (default: N)");
+
 static int max_buffered_frames = 10000;
 module_param(max_buffered_frames, int, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(max_buffered_frames, "Maximum number of frames to buffer in the driver");
@@ -659,10 +663,10 @@ static struct sk_buff *hip4_mbulk_to_skb(struct scsc_service *service, struct hi
 
 cont:
 	if (atomic)
-		skb = slsi_alloc_skb(bytes_to_alloc, GFP_ATOMIC);
+		skb = alloc_skb(bytes_to_alloc, GFP_ATOMIC);
 	else {
 		spin_unlock_bh(&hip_priv->rx_lock);
-		skb = slsi_alloc_skb(bytes_to_alloc, GFP_KERNEL);
+		skb = alloc_skb(bytes_to_alloc, GFP_KERNEL);
 		spin_lock_bh(&hip_priv->rx_lock);
 	}
 	if (!skb) {
@@ -1097,7 +1101,7 @@ consume_ctl_mbulk:
 #else
 		if (m->flag & MBULK_F_WAKEUP) {
 			SLSI_INFO(sdev, "WIFI wakeup by DATA frame:\n");
-			SCSC_BIN_TAG_INFO(BINARY, skb->data, fapi_get_siglen(skb) + ETH_HLEN);
+			SCSC_BIN_TAG_INFO(BINARY, fapi_get_data(skb), fapi_get_datalen(skb) > 54 ? 54 : fapi_get_datalen(skb));
 		}
 #endif
 #ifdef CONFIG_SCSC_WLAN_DEBUG
@@ -1220,7 +1224,10 @@ static void hip4_irq_handler(int irq, void *data)
 #ifdef TASKLET
 	tasklet_schedule(&hip->hip_priv->intr_tq);
 #else
-	schedule_work(&hip->hip_priv->intr_wq);
+	if (hip4_system_wq)
+		schedule_work(&hip->hip_priv->intr_wq);
+	else
+		queue_work(hip->hip_priv->hip4_workq, &hip->hip_priv->intr_wq);
 #endif
 end:
 	/* Clear interrupt */
@@ -1467,6 +1474,15 @@ int hip4_init(struct slsi_hip4 *hip)
 	atomic_set(&hip->hip_priv->in_rx, 0);
 	spin_lock_init(&hip->hip_priv->tx_lock);
 	atomic_set(&hip->hip_priv->in_tx, 0);
+
+	wake_lock_init(&hip->hip_priv->hip4_wake_lock, WAKE_LOCK_SUSPEND, "hip4_wake_lock");
+
+	/* Init work structs */
+	hip->hip_priv->hip4_workq = create_singlethread_workqueue("hip4_work");
+	if (!hip->hip_priv->hip4_workq) {
+		SLSI_ERR_NODEV("Error creating singlethread_workqueue\n");
+		return -ENOMEM;
+	}
 #ifdef TASKLET
 	/* Init tasklet */
 	tasklet_init(&hip->hip_priv->intr_tq, hip4_tasklet, (unsigned long)hip);
@@ -1485,8 +1501,6 @@ int hip4_init(struct slsi_hip4 *hip)
 	atomic_set(&hip->hip_priv->gactive, 1);
 	spin_lock_init(&hip->hip_priv->gbot_lock);
 	hip->hip_priv->saturated = 0;
-
-	wake_lock_init(&hip->hip_priv->hip4_wake_lock, WAKE_LOCK_SUSPEND, "hip4_wake_lock");
 
 	return 0;
 }
@@ -1712,6 +1726,8 @@ void hip4_freeze(struct slsi_hip4 *hip)
 #else
 	cancel_work_sync(&hip->hip_priv->intr_wq);
 #endif
+	flush_workqueue(hip->hip_priv->hip4_workq);
+	destroy_workqueue(hip->hip_priv->hip4_workq);
 	atomic_set(&hip->hip_priv->rx_ready, 0);
 	atomic_set(&hip->hip_priv->watchdog_timer_active, 0);
 	/* Deactive the wd timer prior its expiration */
@@ -1741,6 +1757,10 @@ void hip4_deinit(struct slsi_hip4 *hip)
 	cancel_work_sync(&hip->hip_priv->intr_wq);
 #endif
 	scsc_service_mifintrbit_unregister_tohost(service, hip->hip_priv->rx_intr_tohost);
+
+	flush_workqueue(hip->hip_priv->hip4_workq);
+	destroy_workqueue(hip->hip_priv->hip4_workq);
+
 	scsc_service_mifintrbit_free_fromhost(service, hip->hip_priv->rx_intr_fromhost, SCSC_MIFINTR_TARGET_R4);
 
 	/* If we get to that point with rx_lock/tx_lock claimed, trigger BUG() */

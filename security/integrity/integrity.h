@@ -22,6 +22,7 @@ enum five_file_integrity {
 	FIVE_FILE_FAIL,
 	FIVE_FILE_RSA,
 	FIVE_FILE_DMVERITY,
+	FIVE_FILE_FSVERITY,
 	FIVE_FILE_HMAC
 };
 
@@ -130,6 +131,7 @@ struct integrity_iint_cache {
 	unsigned long five_flags;
 	enum five_file_integrity five_status;
 	struct integrity_label *five_label;
+	bool five_signing;
 #endif
 };
 

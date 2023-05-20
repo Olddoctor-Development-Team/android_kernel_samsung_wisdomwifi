@@ -38,6 +38,7 @@
 
 /* definitions */
 #define SEC_BATTERY_CABLE_HV_WIRELESS_ETX	100
+#define SLOW_CHARGING_CURRENT_STANDARD      400
 
 #define MFC_LDO_ON		1
 #define MFC_LDO_OFF		0
@@ -71,6 +72,9 @@ enum power_supply_ext_property {
 };
 
 enum sec_battery_usb_conf {
+#if defined(CONFIG_ENABLE_USB_SUSPEND_STATE)
+	USB_CURRENT_SUSPENDED = 1,
+#endif
 	USB_CURRENT_UNCONFIGURED = 100,
 	USB_CURRENT_HIGH_SPEED = 500,
 	USB_CURRENT_SUPER_SPEED = 900,
@@ -658,6 +662,7 @@ struct sec_battery_platform_data {
 	/* NO NEED TO BE CHANGED */
 	unsigned int pre_afc_input_current;
 	unsigned int pre_wc_afc_input_current;
+	unsigned int select_pd_input_current;
 	unsigned int store_mode_afc_input_current;
 	unsigned int store_mode_hv_wireless_input_current;
 
@@ -865,6 +870,9 @@ struct sec_battery_platform_data {
 	unsigned int normal_charging_total_time;
 	unsigned int usb_charging_total_time;
 
+	/* moisture detect function support for non-water proof USB type-b models */
+	bool detect_moisture;
+	
 	/* fuel gauge */
 	char *fuelgauge_name;
 	int fg_irq;
@@ -936,12 +944,15 @@ struct sec_battery_platform_data {
 	/* if siop level 0, set minimum fast charging current */
 	int minimum_charging_current_by_siop_0;
 	int input_current_by_siop_20;
+	int input_current_by_siop_40;
 	int charging_current_browsing_mode;
 	
 	int wc_hero_stand_cc_cv;
 	int wc_hero_stand_cv_current;
 	int wc_hero_stand_hv_cv_current;
 
+	int default_input_current;
+	int default_charging_current;
 	int max_input_voltage;
 	int max_input_current;
 	int pre_afc_work_delay;
@@ -954,9 +965,10 @@ struct sec_battery_platform_data {
 	sec_charger_functions_t chg_functions_setting;
 
 	bool fake_capacity;
-
-#if defined(CONFIG_BATTERY_CISD)
+	unsigned int slow_charging_current;
+	
 	unsigned int battery_full_capacity;
+#if defined(CONFIG_BATTERY_CISD)
 	unsigned int cisd_cap_high_thr;
 	unsigned int cisd_cap_low_thr;
 	unsigned int cisd_cap_limit;
@@ -1152,6 +1164,11 @@ static inline struct power_supply *get_power_supply_by_name(char *name)
 
 #define is_hv_wire_type(cable_type) ( \
 	is_hv_afc_wire_type(cable_type) || is_hv_qc_wire_type(cable_type))
+
+#define is_nocharge_type(cable_type) ( \
+		cable_type == SEC_BATTERY_CABLE_NONE || \
+		cable_type == SEC_BATTERY_CABLE_OTG || \
+		cable_type == SEC_BATTERY_CABLE_POWER_SHARING)
 
 #define is_pd_wire_type(cable_type) ( \
 		cable_type == SEC_BATTERY_CABLE_PDIC)

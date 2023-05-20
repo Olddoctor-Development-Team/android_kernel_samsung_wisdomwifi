@@ -58,14 +58,14 @@
 #define SEC_BAT_CURRENT_EVENT_AFC					0x0001
 #define SEC_BAT_CURRENT_EVENT_CHARGE_DISABLE		0x0002
 #define SEC_BAT_CURRENT_EVENT_SKIP_HEATING_CONTROL	0x0004
-#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING		0x0010
+#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING		0x0080
 #define SEC_BAT_CURRENT_EVENT_HIGH_TEMP_SWELLING	0x0020
 #if defined(CONFIG_ENABLE_100MA_CHARGING_BEFORE_USB_CONFIGURED)
 #define SEC_BAT_CURRENT_EVENT_USB_100MA			0x0040
 #else
 #define SEC_BAT_CURRENT_EVENT_USB_100MA			0x0000
 #endif
-#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND			0x0080
+#define SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND			0x0010
 #define SEC_BAT_CURRENT_EVENT_SWELLING_MODE		(SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND | SEC_BAT_CURRENT_EVENT_HIGH_TEMP_SWELLING)
 #define SEC_BAT_CURRENT_EVENT_LOW_TEMP_MODE		(SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING | SEC_BAT_CURRENT_EVENT_LOW_TEMP_SWELLING_2ND)
 #define SEC_BAT_CURRENT_EVENT_USB_SUPER			0x0100
@@ -75,13 +75,19 @@
 #define SEC_BAT_CURRENT_EVENT_VBAT_OVP			0x1000
 #define SEC_BAT_CURRENT_EVENT_VSYS_OVP			0x2000
 #define SEC_BAT_CURRENT_EVENT_WPC_VOUT_LOCK		0x4000
+#define SEC_BAT_CURRENT_EVENT_AICL				0x8000
+#define SEC_BAT_CURRENT_EVENT_HV_DISABLE		0x10000
 #define SEC_BAT_CURRENT_EVENT_SELECT_PDO		0x20000
 
 #define SIOP_EVENT_NONE 	0x0000
 #define SIOP_EVENT_WPC_CALL 	0x0001
 
 #if defined(CONFIG_SEC_FACTORY)			/* SEC_FACTORY */
+#if defined(CONFIG_A10_FACTORY_MAX_SOC)
+#define STORE_MODE_CHARGING_MAX 75
+#else
 #define STORE_MODE_CHARGING_MAX 80
+#endif
 #define STORE_MODE_CHARGING_MIN 70
 #else						/* !SEC_FACTORY, STORE MODE */
 #define STORE_MODE_CHARGING_MAX 70
@@ -170,9 +176,12 @@ struct capacity_measure_info {
 };
 #endif
 
+struct sec_ttf_data;
+
 struct sec_battery_info {
 	struct device *dev;
 	sec_battery_platform_data_t *pdata;
+	struct sec_ttf_data *ttf_d;
 
 	/* power supply used in Android */
 	struct power_supply *psy_bat;
@@ -200,6 +209,7 @@ struct sec_battery_info {
 	struct pdic_notifier_struct pdic_info;
 	struct sec_bat_pdic_list pd_list;
 #endif
+	bool update_pd_list;
 #if defined(CONFIG_VBUS_NOTIFIER)
 	struct notifier_block vbus_nb;
 	int muic_vbus_status;
@@ -299,6 +309,10 @@ struct sec_battery_info {
 	int wpc_temp;
 	int coil_temp;
 	int slave_chg_temp;
+#if defined(CONFIG_ABNORMAL_BAT_THM_WA)
+	bool temp_control;
+	int prev_bat_temp;
+#endif
 
 	int temp_adc;
 	int temp_ambient_adc;
@@ -332,6 +346,8 @@ struct sec_battery_info {
 	int muic_cable_type;
 	int extended_cable_type;
 
+	bool pd_disable_by_afc_option;
+
 	struct wake_lock cable_wake_lock;
 	struct delayed_work cable_work;
 	struct wake_lock vbus_wake_lock;
@@ -349,6 +365,8 @@ struct sec_battery_info {
 	struct wake_lock siop_level_wake_lock;
 	struct delayed_work wc_headroom_work;
 	struct wake_lock wc_headroom_wake_lock;
+	struct delayed_work hv_disable_work;
+	struct wake_lock hv_disable_wake_lock;
 #if defined(CONFIG_UPDATE_BATTERY_DATA)
 	struct delayed_work batt_data_work;
 	struct wake_lock batt_data_wake_lock;
@@ -392,6 +410,9 @@ struct sec_battery_info {
 	bool store_mode;
 	bool slate_mode;
 
+	/* usb suspend */
+	bool usb_suspend_mode;
+
 	/* MTBF test for CMCC */
 	bool is_hc_usb;
 
@@ -412,14 +433,12 @@ struct sec_battery_info {
 #if defined(CONFIG_AFC_CHARGER_MODE)
 	char *hv_chg_name;
 #endif
-#if defined(CONFIG_CALC_TIME_TO_FULL)
-	int timetofull;
-	struct delayed_work timetofull_work;
-#endif
 	struct delayed_work slowcharging_work;
 #if defined(CONFIG_BATTERY_AGE_FORECAST)
 	int batt_cycle;
 #endif
+	int slow_charging;
+	struct delayed_work slow_chg_work;
 #if defined(CONFIG_STEP_CHARGING)
 	unsigned int step_charging_type;
 	unsigned int step_charging_charge_power;
@@ -657,6 +676,8 @@ enum {
 	EXT_DEV_GAMEPAD_OTG,
 };
 
+extern unsigned int lpcharge;
+
 extern void select_pdo(int num);
 
 extern int adc_read(struct sec_battery_info *battery, int channel);
@@ -686,4 +707,6 @@ extern int sec_battery_update_data(const char* file_path);
 extern bool sec_bat_cisd_check(struct sec_battery_info *battery);
 extern void sec_battery_cisd_init(struct sec_battery_info *battery);
 #endif
+bool sec_bat_hv_wc_normal_mode_check(struct sec_battery_info *battery);
+
 #endif /* __SEC_BATTERY_H */

@@ -63,6 +63,7 @@ int g_i_FW_VER = 0;
 int g_i_CFG_VER = 0;
 int g_i_CID_MAJ = 0;		/*GUEST ID */
 int g_i_CID_MIN = 0;		/*VER for GUEST */
+int g_i_PANEL = 0;
 #endif
 #ifdef HX_ZERO_FLASH
 int g_f_0f_updat = 0;
@@ -102,7 +103,7 @@ unsigned long CFG_VER_MAJ_FLASH_ADDR;
 unsigned long CFG_VER_MIN_FLASH_ADDR;
 unsigned long CID_VER_MAJ_FLASH_ADDR;
 unsigned long CID_VER_MIN_FLASH_ADDR;
-/*unsigned long	PANEL_VERSION_ADDR;*/
+unsigned long	PANEL_VERSION_ADDR;
 
 unsigned long FW_VER_MAJ_FLASH_LENG;
 unsigned long FW_VER_MIN_FLASH_LENG;
@@ -110,7 +111,7 @@ unsigned long CFG_VER_MAJ_FLASH_LENG;
 unsigned long CFG_VER_MIN_FLASH_LENG;
 unsigned long CID_VER_MAJ_FLASH_LENG;
 unsigned long CID_VER_MIN_FLASH_LENG;
-/*unsigned long	PANEL_VERSION_LENG;*/
+unsigned long	PANEL_VERSION_LENG;
 
 unsigned long FW_CFG_VER_FLASH_ADDR;
 
@@ -798,6 +799,11 @@ static int himax_auto_update_check(void)
 			input_info(true, &private_ts->client->dev,
 					"%s %s: Need to update!\n", HIMAX_LOG_TAG,
 					__func__);
+			return NO_ERR;
+		} else if (ic_data->vendor_panel_ver != g_i_PANEL) {
+			input_info(true, &private_ts->client->dev,
+					"%s %s: Need to update!(panel ic:%x bin:%x)\n", HIMAX_LOG_TAG,
+					__func__, ic_data->vendor_panel_ver, g_i_PANEL);
 			return NO_ERR;
 		} else {
 			input_err(true, &private_ts->client->dev,
@@ -2653,6 +2659,8 @@ GET_TOUCH_FAIL:
 			HIMAX_LOG_TAG, __func__);
 #ifdef HX_RST_PIN_FUNC
 	g_core_fp.fp_ic_reset(false, true);
+#else
+	g_core_fp.fp_system_reset();
 #endif
 END_FUNCTION:
 	if (debug_data != NULL)
@@ -3270,3 +3278,10 @@ ESCAPE_0F_UPDATE:
 			__func__);
 	return 0;
 }
+
+#ifdef CONFIG_SAMSUNG_TUI
+void stui_report_all_leave_event(struct himax_ts_data *ts)
+{
+	himax_report_all_leave_event(ts);
+}
+#endif

@@ -33,7 +33,7 @@
 #define ENABLE_MIVR 0
 
 /* define IRQ function if need */
-#define EN_BAT_DET_IRQ 0
+#define EN_BAT_DET_IRQ 1
 #define EN_CHG1_IRQ_CHGIN 0
 
 /* Test debug log enable */
@@ -100,6 +100,7 @@
 
 #define CHARGER_OFF_MODE	0
 #define BUCK_MODE		1
+#define BST_MODE		2
 #define CHG_MODE		3
 #define OTG_BST_MODE		6
 
@@ -250,6 +251,12 @@
 #define TOP_OFF_TIME_WIDTH    3
 #define TOP_OFF_TIME_MASK    MASK(TOP_OFF_TIME_WIDTH, TOP_OFF_TIME_SHIFT)
 
+#define IVR_M_SHIFT	1
+#define IVR_M_MASK	BIT(IVR_M_SHIFT)
+#define IVR_STATUS	0x08
+
+#define REDUCE_CURRENT_STEP         25
+#define MINIMUM_INPUT_CURRENT           300
 
 #define FAKE_BAT_LEVEL          50
 
@@ -329,6 +336,8 @@ struct s2mu106_charger_data {
 	struct device *dev;
 	struct s2mu106_platform_data *s2mu106_pdata;
 	struct delayed_work otg_vbus_work;
+	struct delayed_work ivr_work;
+	struct wake_lock ivr_wake_lock;
 
 	struct workqueue_struct *charger_wqueue;
 	struct power_supply *psy_chg;
@@ -358,14 +367,20 @@ struct s2mu106_charger_data {
 	int irq_chg;
 	int irq_chgin;
 	int irq_chg_fault;
+	int irq_tx;
 	int irq_otg;
 	int irq_vbus;
 	int irq_rst;
 	int irq_done;
 	int irq_sys;
 	int irq_event;
+	int irq_bat;
+	int irq_ivr;
 
 	int charge_mode;
+
+	int irq_ivr_enabled;
+	int ivr_on;
 
 	/* efficiency 9V charging */
 	unsigned char reg_0x9E;
@@ -373,6 +388,7 @@ struct s2mu106_charger_data {
 #if defined(CONFIG_MUIC_NOTIFIER)
 	struct notifier_block cable_check;
 #endif
+	struct mutex regmode_mutex;
 };
 
 #endif /*S2MU106_CHARGER_H*/

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2016 Samsung Electronics, Inc.
+ * Copyright (C) 2012-2019 Samsung Electronics, Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -49,6 +49,7 @@
 #include "tz_iw_boot_log.h"
 #include "tz_iwio.h"
 #include "tz_iwlog.h"
+#include "tz_kernel_api_internal.h"
 #include "tzlog.h"
 #include "tz_mem.h"
 #include "tz_panic_dump.h"
@@ -278,16 +279,13 @@ static int tzdev_run_init_sequence(void)
 	int ret = 0;
 
 	if (atomic_read(&tzdev_swd_state) == TZDEV_SWD_DOWN) {
-		/* check kernel and driver version compatibility with Blowfish */
+		/* check kernel and driver version compatibility with TEEGRIS */
 		ret = tzdev_smc_check_version();
-		if (ret == -ENOSYS) {
-			tzdev_print(0, "Minor version of TZDev driver is newer than version of"
-				"Blowfish secure kernel.\nNot critical, continue...\n");
+		if (ret == -ENOSYS || ret == -EINVAL) {
+			/* version is not compatibile. Not critical, continue ... */
 			ret = 0;
 		} else if (ret) {
-			tzdev_print(0, "The version of the Linux kernel or "
-				"TZDev driver is not compatible with Blowfish "
-				"secure kernel\n");
+			tzdev_print(0, "tzdev_smc_check_version() failed\n");
 			goto out;
 		}
 
@@ -341,6 +339,7 @@ static int tzdev_run_init_sequence(void)
 
 		tzdev_register_iwis();
 		tz_iwnotify_initialize();
+		tzdev_kapi_init();
 
 		if (atomic_cmpxchg(&tzdev_swd_state, TZDEV_SWD_DOWN, TZDEV_SWD_UP)) {
 			ret = -ESHUTDOWN;
